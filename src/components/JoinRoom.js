@@ -1,126 +1,114 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { joinRoom, generatePlayerId } from '../firebase';
+import { useToast } from './Toast';
+import { sounds } from '../sounds';
 import './JoinRoom.css';
 
 const JoinRoom = ({ onBack, onRoomJoined }) => {
+  const toast = useToast();
   const [roomCode, setRoomCode] = useState('');
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState(localStorage.getItem('playerName') || '');
   const [isJoining, setIsJoining] = useState(false);
-  const [error, setError] = useState('');
+  const [errField, setErrField] = useState('');
+  const codeRef = useRef(null);
+  const nameRef = useRef(null);
+
+  // Prefill from a shared link: ?room=ID
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const r = params.get('room');
+    if (r) {
+      setRoomCode(r);
+      nameRef.current?.focus();
+    } else {
+      codeRef.current?.focus();
+    }
+  }, []);
 
   const handleJoinRoom = async () => {
     if (!roomCode.trim() || !playerName.trim()) {
-      setError('Please enter both room code and your name');
+      setErrField(!roomCode.trim() ? 'code' : 'name');
+      toast('Enter both a room code and your name', 'warn');
       return;
     }
 
     setIsJoining(true);
-    setError('');
-
+    setErrField('');
     try {
       const playerId = generatePlayerId();
       const roomData = await joinRoom(roomCode.trim(), playerId, playerName.trim());
-      
-      // Store player info in localStorage for persistence
+
       localStorage.setItem('playerId', playerId);
       localStorage.setItem('playerName', playerName.trim());
       localStorage.setItem('serialNumber', roomData.playerSerialNumber);
-      
-      // Call the callback to navigate to room
-      if (onRoomJoined) {
-        onRoomJoined(roomCode.trim(), playerId, playerName.trim(), roomData.playerSerialNumber, roomData);
-      }
+
+      sounds.join();
+      toast('Seated at the table', 'success');
+      onRoomJoined?.(roomCode.trim(), playerId, playerName.trim(), roomData.playerSerialNumber, roomData);
     } catch (error) {
       console.error('Error joining room:', error);
       if (error.message === 'Room not found') {
-        setError('Room not found. Please check the room code.');
+        setErrField('code');
+        toast('No table with that code', 'error');
       } else {
-        setError('Failed to join room. Please try again.');
+        toast('Could not join. Try again.', 'error');
       }
     } finally {
       setIsJoining(false);
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleJoinRoom();
-    }
-  };
+  const onKey = (e) => e.key === 'Enter' && handleJoinRoom();
 
   return (
-    <div className="join-room-screen">
-      <div className="join-room-container">
-        <button className="back-btn" onClick={onBack}>
-          ← Back to Home
+    <div className="lobby center-col">
+      <div className="lobby-card join-card shell-max stagger">
+        <button className="tp-back" onClick={onBack}>◂ Lobby</button>
+
+        <div className="lobby-head">
+          <span className="tp-eyebrow">Take a Seat</span>
+          <h1 className="lobby-title tp-display">Join a Table</h1>
+          <p className="lobby-sub">Enter the code from the host to get dealt in.</p>
+        </div>
+
+        <div className="tp-field lobby-field">
+          <label htmlFor="roomCode">Room Code</label>
+          <input
+            ref={codeRef}
+            id="roomCode"
+            className={`tp-input code-input ${errField === 'code' ? 'error' : ''}`}
+            type="text"
+            value={roomCode}
+            onChange={(e) => { setRoomCode(e.target.value); setErrField(''); }}
+            onKeyDown={onKey}
+            placeholder="paste code"
+            maxLength={30}
+            disabled={isJoining}
+          />
+        </div>
+
+        <div className="tp-field lobby-field">
+          <label htmlFor="playerName">Trader Name</label>
+          <input
+            ref={nameRef}
+            id="playerName"
+            className={`tp-input ${errField === 'name' ? 'error' : ''}`}
+            type="text"
+            value={playerName}
+            onChange={(e) => { setPlayerName(e.target.value); setErrField(''); }}
+            onKeyDown={onKey}
+            placeholder="e.g. Gutfreund"
+            maxLength={20}
+            disabled={isJoining}
+          />
+        </div>
+
+        <button className="tp-btn lobby-go" onClick={handleJoinRoom} disabled={isJoining || !roomCode.trim() || !playerName.trim()}>
+          {isJoining ? 'Seating…' : '▸ Sit Down'}
         </button>
-
-        <h1 className="join-room-title">Join Room</h1>
-        <p className="join-room-subtitle">Enter the room code to join an existing game</p>
-
-        <div className="join-form">
-          <div className="input-group">
-            <label htmlFor="roomCode">Room Code</label>
-            <input
-              type="text"
-              id="roomCode"
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value)}
-              placeholder="Enter room code"
-              disabled={isJoining}
-              maxLength={20}
-              onKeyPress={handleKeyPress}
-              className={error && !roomCode.trim() ? 'error' : ''}
-            />
-          </div>
-
-          <div className="input-group">
-            <label htmlFor="playerName">Your Name</label>
-            <input
-              type="text"
-              id="playerName"
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              placeholder="Enter your name"
-              disabled={isJoining}
-              maxLength={20}
-              onKeyPress={handleKeyPress}
-              className={error && !playerName.trim() ? 'error' : ''}
-            />
-          </div>
-
-          {error && (
-            <div className="error-message">
-              <span className="error-icon">⚠️</span>
-              {error}
-            </div>
-          )}
-
-          <button 
-            className="join-room-btn"
-            onClick={handleJoinRoom}
-            disabled={isJoining || !roomCode.trim() || !playerName.trim()}
-          >
-            {isJoining ? 'Joining Room...' : 'Join Room'}
-          </button>
-        </div>
-
-        <div className="join-info">
-          <div className="info-card">
-            <div className="info-icon">🎮</div>
-            <h3>How to Join</h3>
-            <p>Ask the host for the room code and enter it above to join their game.</p>
-          </div>
-          
-          <div className="info-card">
-            <div className="info-icon">👥</div>
-            <h3>Multiple Players</h3>
-            <p>You can join with multiple players using the same room code.</p>
-          </div>
-        </div>
       </div>
     </div>
   );
 };
 
-export default JoinRoom; 
+export default JoinRoom;

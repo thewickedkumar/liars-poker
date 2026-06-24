@@ -1,225 +1,227 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { listenToRoom, updateRoomStatus, generateSerialNumber } from '../firebase';
 import { updateDoc, doc } from 'firebase/firestore';
 import db from '../firebase';
+import { useToast } from './Toast';
+import { sounds } from '../sounds';
+import DollarBill from './DollarBill';
 import './GameRoom.css';
 
+const betLabel = (qty, digit) => `${qty} × ${digit}'s`;
+const COLORS = ['#2ee6a0', '#ffb000', '#5bb8ff', '#ff8fa3', '#b388ff', '#4dd0e1', '#ffd54f', '#80cbc4'];
+
 const GameRoom = ({ roomId, playerId, playerName, serialNumber, onBack }) => {
+  const toast = useToast();
   const [room, setRoom] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [digit, setDigit] = useState(0);
-  const [currentBet, setCurrentBet] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [gameStarted, setGameStarted] = useState(false);
-  const [gameEnded, setGameEnded] = useState(false);
-  const [winner, setWinner] = useState(null);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [revealStep, setRevealStep] = useState(0);
+
+  // refs to detect transitions for sound/toast cues
+  const prevTurnRef = useRef(false);
+  const prevHistLenRef = useRef(0);
+  const prevStatusRef = useRef('waiting');
 
   useEffect(() => {
-    if (roomId) {
-      const unsubscribe = listenToRoom(roomId, (roomData) => {
-        console.log('Room data updated:', roomData);
-        setRoom(roomData);
-        if (roomData?.status === 'playing') {
-          setGameStarted(true);
-          setGameEnded(false);
-          setWinner(null);
-          setCurrentBet(null);
-        }
-        if (roomData?.status === 'finished') {
-          setGameEnded(true);
-          setWinner(roomData.winner);
-        }
-        if (roomData?.currentBet) {
-          setCurrentBet(roomData.currentBet);
-        }
-      });
-
-      return () => unsubscribe();
-    }
+    if (!roomId) return;
+    const unsubscribe = listenToRoom(roomId, (roomData) => setRoom(roomData));
+    return () => unsubscribe();
   }, [roomId]);
 
+  // ---- derived state ----
+  const status = room?.status || 'waiting';
+  const gameStarted = status === 'playing';
+  const gameEnded = status === 'finished';
   const isHost = room?.hostId === playerId;
-  const playerCount = room?.players?.length || 0;
+  const players = room?.players || [];
+  const playerCount = players.length;
+  const currentBet = room?.currentBet || null;
   const currentPlayerIndex = room?.gameState?.currentPlayerIndex || 0;
-  const currentPlayer = room?.players?.[currentPlayerIndex];
+  const currentPlayer = players[currentPlayerIndex];
   const isMyTurn = currentPlayer?.id === playerId;
-  const canMakeInitialBet = isHost && playerCount >= 2 && gameStarted && !currentBet;
-  const canMakeMove = gameStarted && isMyTurn && !gameEnded && currentBet;
+  const round = room?.gameState?.round || 1;
+  const history = room?.betHistory || [];
+  const result = room?.gameResult || null;
+  const winner = room?.winner || null;
 
-  console.log('Game state debug:', {
-    isHost,
-    playerCount,
-    gameStarted,
-    currentBet,
-    canMakeInitialBet,
-    canMakeMove,
-    isMyTurn,
-    currentPlayerIndex
-  });
+  const canMakeInitialBet = isHost && playerCount >= 2 && gameStarted && !currentBet;
+  const canMakeMove = gameStarted && isMyTurn && !gameEnded && !!currentBet;
+
+  const myPlayer = players.find((p) => p.id === playerId);
+  const mySerial = myPlayer?.serialNumber || serialNumber;
+
+  const isValidRaise = !currentBet
+    || quantity > currentBet.quantity
+    || (quantity === currentBet.quantity && digit > currentBet.digit);
+
+  // ---- snap sliders to the standing bid when it's my turn ----
+  useEffect(() => {
+    if (currentBet) {
+      setQuantity(currentBet.quantity);
+      setDigit(currentBet.digit);
+    } else {
+      setQuantity(1);
+      setDigit(0);
+    }
+  }, [currentBet?.quantity, currentBet?.digit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- cue: my turn started ----
+  useEffect(() => {
+    if (isMyTurn && !prevTurnRef.current && gameStarted && !gameEnded && currentBet) {
+      sounds.tick();
+      toast("Your move — raise or call the bluff", 'info', 2400);
+    }
+    prevTurnRef.current = isMyTurn;
+  }, [isMyTurn, gameStarted, gameEnded, currentBet, toast]);
+
+  // ---- cue: a new bid landed (for everyone) ----
+  useEffect(() => {
+    if (history.length > prevHistLenRef.current && prevHistLenRef.current !== 0) {
+      const last = history[history.length - 1];
+      if (last && last.playerId !== playerId && last.type !== 'challenge') sounds.tick();
+    }
+    prevHistLenRef.current = history.length;
+  }, [history.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- cue + reveal sequence on game end ----
+  useEffect(() => {
+    if (status === 'finished' && prevStatusRef.current !== 'finished') {
+      setRevealStep(0);
+      sounds.challenge();
+      const t1 = setTimeout(() => { setRevealStep(1); sounds.reveal(); }, 700);
+      const t2 = setTimeout(() => {
+        setRevealStep(2);
+        if (winner?.id === playerId) sounds.win(); else sounds.lose();
+      }, 1900);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    }
+    if (status === 'playing') setRevealStep(0);
+    prevStatusRef.current = status;
+  }, [status, winner, playerId]);
+
+  // ---- actions ----
+  const pushHistory = (entry) => [...history, { ...entry, ts: Date.now() }];
+
+  const handleStartGame = async () => {
+    if (!isHost || playerCount < 2) return;
+    try {
+      await updateRoomStatus(roomId, 'playing');
+      sounds.bet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed to start the game', 'error');
+    }
+  };
 
   const handlePlaceBet = async () => {
-    console.log('Place bet clicked. Conditions:', {
-      canMakeInitialBet,
-      isHost,
-      playerCount,
-      gameStarted,
-      currentBet
-    });
-
-    if (!canMakeInitialBet) {
-      console.log('Cannot place bet - conditions not met');
-      return;
-    }
-
+    if (!canMakeInitialBet) return;
     setIsSubmitting(true);
     try {
       const betData = {
-        quantity,
-        digit,
-        playerId,
-        playerName,
+        quantity, digit, playerId, playerName,
+        betText: betLabel(quantity, digit),
         timestamp: new Date(),
-        betText: `I bet at least ${quantity} ${digit}${quantity === 1 ? '' : "'s"}`
       };
-
-      console.log('Creating bet data:', betData);
-
-      const roomRef = doc(db, 'rooms', roomId);
-      await updateDoc(roomRef, {
+      await updateDoc(doc(db, 'rooms', roomId), {
         currentBet: betData,
-        gameState: {
-          currentBet: betData,
-          round: 1,
-          currentPlayerIndex: 1  // Move to next player (index 1) after initial bet
-        }
+        gameState: { currentBet: betData, round: 1, currentPlayerIndex: 1 },
+        betHistory: pushHistory({ type: 'bid', playerId, playerName, quantity, digit }),
       });
-
-      console.log('Successfully placed bet, moved to player index 1');
-      setCurrentBet(betData);
-    } catch (error) {
-      console.error('Error placing bet:', error);
-      alert('Failed to place bet. Please try again.');
+      sounds.bet();
+    } catch (e) {
+      console.error(e);
+      toast('Failed to place the bid', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleStartGame = async () => {
-    if (!isHost || playerCount < 2) return;
-
-    try {
-      await updateRoomStatus(roomId, 'playing');
-      setGameStarted(true);
-    } catch (error) {
-      console.error('Error starting game:', error);
-      alert('Failed to start game. Please try again.');
-    }
-  };
-
   const handleRaiseBet = async () => {
-    if (!canMakeMove || !currentBet) {
-      console.log('Cannot make move:', { canMakeMove, currentBet });
-      return;
-    }
-
-    console.log('Attempting to raise bet:', { quantity, digit, currentBet });
-
-    // Validate raise: must increase quantity OR same quantity with higher digit
-    const isValidRaise = quantity > currentBet.quantity || 
-                        (quantity === currentBet.quantity && digit > currentBet.digit);
-
+    if (!canMakeMove) return;
     if (!isValidRaise) {
-      alert('Invalid raise! You must increase the quantity OR use the same quantity with a higher digit.');
+      toast('Raise must increase the count, or hold the count with a higher digit', 'warn');
       return;
     }
-
     setIsSubmitting(true);
     try {
-      const newBetData = {
-        quantity,
-        digit,
-        playerId,
-        playerName,
+      const betData = {
+        quantity, digit, playerId, playerName,
+        betText: betLabel(quantity, digit),
         timestamp: new Date(),
-        betText: `I bet at least ${quantity} ${digit}${quantity === 1 ? '' : "'s"}`
       };
-
       const nextPlayerIndex = (currentPlayerIndex + 1) % playerCount;
-      const roomRef = doc(db, 'rooms', roomId);
-      
-      console.log('Updating Firebase with new bet:', newBetData);
-      console.log('Next player index:', nextPlayerIndex);
-      
-      await updateDoc(roomRef, {
-        currentBet: newBetData,
-        gameState: {
-          currentBet: newBetData,
-          round: room.gameState?.round || 1,
-          currentPlayerIndex: nextPlayerIndex
-        }
+      await updateDoc(doc(db, 'rooms', roomId), {
+        currentBet: betData,
+        gameState: { currentBet: betData, round, currentPlayerIndex: nextPlayerIndex },
+        betHistory: pushHistory({ type: 'raise', playerId, playerName, quantity, digit }),
       });
-
-      console.log('Successfully raised bet');
-      setCurrentBet(newBetData);
-    } catch (error) {
-      console.error('Error raising bet:', error);
-      alert('Failed to raise bet. Please try again.');
+      sounds.raise();
+    } catch (e) {
+      console.error(e);
+      toast('Failed to raise', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleChallenge = async () => {
-    if (!canMakeMove || !currentBet) {
-      console.log('Cannot challenge:', { canMakeMove, currentBet });
-      return;
-    }
-
-    console.log('Attempting to challenge bet:', currentBet);
-
+    if (!canMakeMove) return;
     setIsSubmitting(true);
     try {
-      // Calculate total digits across all players
-      const allDigits = room.players.map(player => player.serialNumber).join('');
+      const allDigits = players.map((p) => p.serialNumber).join('');
       const targetDigit = currentBet.digit.toString();
-      const actualCount = (allDigits.match(new RegExp(targetDigit, 'g')) || []).length;
-
-      console.log('Challenge calculation:', {
-        allDigits,
-        targetDigit,
-        actualCount,
-        claimedCount: currentBet.quantity
-      });
-
+      const actualCount = allDigits.split('').filter((c) => c === targetDigit).length;
       const challengerWins = actualCount < currentBet.quantity;
-      const winner = challengerWins ? playerName : currentBet.playerName;
-      const winnerId = challengerWins ? playerId : currentBet.playerId;
+      const winName = challengerWins ? playerName : currentBet.playerName;
+      const winId = challengerWins ? playerId : currentBet.playerId;
 
-      console.log('Challenge result:', { challengerWins, winner, winnerId });
-
-      const roomRef = doc(db, 'rooms', roomId);
-      await updateDoc(roomRef, {
+      await updateDoc(doc(db, 'rooms', roomId), {
         status: 'finished',
         winner: {
-          name: winner,
-          id: winnerId,
-          reason: challengerWins ? 'Challenge successful' : 'Challenge failed'
+          name: winName,
+          id: winId,
+          reason: challengerWins ? 'The bluff was called' : 'The bid held up',
         },
         gameResult: {
           claimedCount: currentBet.quantity,
-          actualCount: actualCount,
+          actualCount,
           targetDigit: currentBet.digit,
-          allSerialNumbers: room.players.map(p => ({ name: p.name, serial: p.serialNumber }))
-        }
+          challengerName: playerName,
+          bidderName: currentBet.playerName,
+          challengerWon: challengerWins,
+          allSerialNumbers: players.map((p) => ({ name: p.name, serial: p.serialNumber, id: p.id })),
+        },
+        betHistory: pushHistory({ type: 'challenge', playerId, playerName, quantity: currentBet.quantity, digit: currentBet.digit }),
       });
+    } catch (e) {
+      console.error(e);
+      toast('Failed to challenge', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-      console.log('Successfully challenged bet');
-      setGameEnded(true);
-      setWinner({ name: winner, id: winnerId });
-    } catch (error) {
-      console.error('Error challenging bet:', error);
-      alert('Failed to challenge bet. Please try again.');
+  const handlePlayAgain = async () => {
+    if (!isHost) return;
+    setIsSubmitting(true);
+    try {
+      const newPlayers = players.map((p) => ({ ...p, serialNumber: generateSerialNumber() }));
+      await updateDoc(doc(db, 'rooms', roomId), {
+        status: 'playing',
+        currentBet: null,
+        gameState: null,
+        winner: null,
+        gameResult: null,
+        players: newPlayers,
+        betHistory: [],
+      });
+      sounds.bet();
+      toast('New hand dealt', 'success');
+    } catch (e) {
+      console.error(e);
+      toast('Failed to deal a new hand', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -228,359 +230,266 @@ const GameRoom = ({ roomId, playerId, playerName, serialNumber, onBack }) => {
   const handleLeaveRoom = async () => {
     setIsLeaving(true);
     try {
-      // Remove player from room
-      const updatedPlayers = room.players.filter(p => p.id !== playerId);
+      const updatedPlayers = players.filter((p) => p.id !== playerId);
       const roomRef = doc(db, 'rooms', roomId);
-      
-      if (updatedPlayers.length === 0) {
-        // If no players left, delete the room
-        await updateDoc(roomRef, { status: 'deleted' });
-      } else {
-        // Update room with remaining players
-        await updateDoc(roomRef, { players: updatedPlayers });
-      }
-      
+      if (updatedPlayers.length === 0) await updateDoc(roomRef, { status: 'deleted' });
+      else await updateDoc(roomRef, { players: updatedPlayers });
       onBack();
-    } catch (error) {
-      console.error('Error leaving room:', error);
-      alert('Failed to leave room. Please try again.');
+    } catch (e) {
+      console.error(e);
+      toast('Failed to leave the room', 'error');
     } finally {
       setIsLeaving(false);
     }
   };
 
-  const handlePlayAgain = async () => {
-    if (!isHost) return;
-    setIsSubmitting(true);
-    try {
-      // Generate new serial numbers for all players
-      const newPlayers = room.players.map(player => ({
-        ...player,
-        serialNumber: generateSerialNumber(),
-      }));
-      const roomRef = doc(db, 'rooms', roomId);
-      await updateDoc(roomRef, {
-        status: 'playing',
-        currentBet: null,
-        gameState: null,
-        winner: null,
-        gameResult: null,
-        players: newPlayers
-      });
-      setGameEnded(false);
-      setWinner(null);
-      setCurrentBet(null);
-      setGameStarted(true);
-    } catch (error) {
-      console.error('Error resetting game:', error);
-      alert('Failed to start a new round. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
+  const copyCode = () => {
+    navigator.clipboard?.writeText(roomId);
+    sounds.click();
+    toast('Room code copied', 'success', 1800);
   };
-
-  const getPlayerIcon = (player) => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
-    const colorIndex = room.players.indexOf(player) % colors.length;
-    const isCurrentTurn = gameStarted && currentPlayerIndex === room.players.indexOf(player);
-    
-    return (
-      <div 
-        className={`player-icon ${player.isHost ? 'host' : ''} ${isCurrentTurn ? 'current-turn' : ''}`}
-        style={{ backgroundColor: colors[colorIndex] }}
-      >
-        {player.name.charAt(0).toUpperCase()}
-        {player.isHost && <span className="host-badge">👑</span>}
-        {isCurrentTurn && <span className="turn-badge">🎯</span>}
-      </div>
-    );
+  const copyLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+    navigator.clipboard?.writeText(url);
+    sounds.click();
+    toast('Invite link copied', 'success', 1800);
   };
-
-  // Find the current player's serial number from the latest room data
-  const myPlayer = room?.players?.find(p => p.id === playerId);
-  const mySerialNumber = myPlayer?.serialNumber || '';
 
   if (!room) {
     return (
-      <div className="game-room-screen">
-        <div className="loading">Loading room...</div>
+      <div className="gr center-col">
+        <div className="gr-loading">
+          <span className="tp-pill live"><span className="dot" />Connecting to the floor…</span>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="game-room-screen">
-      <div className="game-room-container">
-        <button className="back-btn" onClick={onBack}>
-          ← Back to Home
-        </button>
+  const colorFor = (i) => COLORS[i % COLORS.length];
 
-        <div className="room-header">
-          <h1 className="room-title">Game Room</h1>
-          <div className="room-code-section">
-            <div className="room-code-label">Room Code:</div>
-            <div className="room-code-display">
-              <span className="code">{roomId}</span>
-              <button 
-                className="copy-btn"
-                onClick={() => {
-                  navigator.clipboard.writeText(roomId);
-                }}
-                title="Copy room code"
-              >
-                📋
+  return (
+    <div className="gr">
+      <div className="gr-shell shell-max">
+        {/* ===== Top bar ===== */}
+        <div className="gr-topbar tp-panel">
+          <button className="tp-back" onClick={gameEnded ? handleLeaveRoom : onBack}>◂ Leave</button>
+
+          <div className="gr-code">
+            <span className="gr-code-label">Table</span>
+            <code className="gr-code-val">{roomId}</code>
+            <button className="icon-btn sm" onClick={copyCode} title="Copy code">⧉</button>
+            <button className="icon-btn sm" onClick={copyLink} title="Copy invite link">🔗</button>
+          </div>
+
+          <div className="gr-meta">
+            {gameStarted && !gameEnded && <span className="tp-pill live"><span className="dot" />Hand {round}</span>}
+            {!gameStarted && !gameEnded && <span className="tp-pill warn"><span className="dot" />Waiting</span>}
+            {gameEnded && <span className="tp-pill danger"><span className="dot" />Settled</span>}
+            <span className="tp-pill">{playerCount} seat{playerCount !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+
+        {gameEnded ? (
+          /* ===================== REVEAL ===================== */
+          <div className="gr-reveal">
+            <div className="reveal-banner anim-pop" data-win={winner?.id === playerId}>
+              <span className="tp-eyebrow">{result?.challengerWon ? 'Bluff Called' : 'Bid Held'}</span>
+              <h1 className="reveal-winner tp-display">
+                {winner?.id === playerId ? 'You Win' : `${winner?.name} Wins`}
+              </h1>
+              <p className="reveal-reason">{winner?.reason}</p>
+            </div>
+
+            {revealStep >= 1 && result && (
+              <div className="reveal-tally anim-fade-up">
+                <div className="tally-col">
+                  <span className="tally-label">Claimed</span>
+                  <span className="tally-num">{result.claimedCount}</span>
+                </div>
+                <div className="tally-vs">
+                  <span className="tally-digit">{result.targetDigit}'s</span>
+                  <span className="tally-arrow">vs</span>
+                </div>
+                <div className="tally-col">
+                  <span className="tally-label">Actual on table</span>
+                  <span className={`tally-num ${result.actualCount >= result.claimedCount ? 'good' : 'bad'}`}>
+                    {result.actualCount}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {revealStep >= 2 && result && (
+              <div className="reveal-notes">
+                <span className="tp-eyebrow center">All notes revealed · {result.targetDigit}'s highlighted</span>
+                <div className="reveal-grid">
+                  {result.allSerialNumbers.map((p, i) => (
+                    <div className="reveal-note" key={p.id || i} style={{ animationDelay: `${i * 0.08}s` }}>
+                      <DollarBill
+                        serialNumber={p.serial}
+                        owner={p.name}
+                        label={p.id === winner?.id ? 'Winner' : 'Note'}
+                        highlightDigit={result.targetDigit}
+                        compact
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="reveal-actions">
+              {isHost && (
+                <button className="tp-btn" onClick={handlePlayAgain} disabled={isSubmitting}>
+                  {isSubmitting ? 'Dealing…' : '↻ Deal Again'}
+                </button>
+              )}
+              <button className="tp-btn ghost red" onClick={handleLeaveRoom} disabled={isLeaving}>
+                {isLeaving ? 'Leaving…' : 'Leave Table'}
               </button>
             </div>
           </div>
-          <div className="player-count">{playerCount} player{playerCount !== 1 ? 's' : ''} in room</div>
-        </div>
-
-        <div className="game-content">
-          {/* Host's Dollar Bill */}
-          <div className="host-bill-section">
-            <h2>Your Dollar Bill</h2>
-            <div className="dollar-bill">
-              <div className="bill-header">
-                <div className="federal-reserve">FEDERAL RESERVE NOTE</div>
-                <div className="series">Series 2021</div>
+        ) : (
+          /* ===================== LIVE TABLE ===================== */
+          <div className="gr-grid">
+            {/* --- Left: roster + history --- */}
+            <aside className="gr-side">
+              <div className="gr-roster tp-panel">
+                <div className="panel-head">
+                  <span className="tp-eyebrow">The Floor</span>
+                  {gameStarted && <span className="panel-sub">{currentPlayer?.name}'s turn</span>}
+                </div>
+                <ul className="roster-list">
+                  {players.map((p, i) => {
+                    const turn = gameStarted && currentPlayerIndex === i;
+                    return (
+                      <li key={p.id} className={`roster-item ${turn ? 'turn' : ''} ${p.id === playerId ? 'me' : ''}`}>
+                        <span className="roster-avatar" style={{ background: colorFor(i) }}>
+                          {p.name.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="roster-name">
+                          {p.name}{p.id === playerId && <em> (you)</em>}
+                        </span>
+                        <span className="roster-tags">
+                          {p.isHost && <span className="tag host" title="Host">♛</span>}
+                          {turn && <span className="tag turn-tag">▸</span>}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-              
-              <div className="bill-content">
-                <div className="bill-left">
-                  <div className="portrait-placeholder">
-                    <div className="portrait-circle">G</div>
-                  </div>
-                  <div className="bill-text">
-                    <div className="denomination">ONE DOLLAR</div>
-                    <div className="treasury">THE UNITED STATES OF AMERICA</div>
-                    <div className="promise">THIS NOTE IS LEGAL TENDER FOR ALL DEBTS, PUBLIC AND PRIVATE</div>
-                  </div>
-                </div>
-                
-                <div className="bill-right">
-                  <div className="seal-placeholder">
-                    <div className="seal-circle">★</div>
-                  </div>
-                  <div className="serial-label">SERIAL NUMBER</div>
-                  <div className="serial-number">{mySerialNumber}</div>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Players List */}
-          <div className="players-section">
-            <h2>Players in Room</h2>
-            <div className="players-grid">
-              {room.players.map((player, index) => (
-                <div key={player.id} className="player-card">
-                  {getPlayerIcon(player)}
-                  <div className="player-info">
-                    <div className="player-name">{player.name}</div>
-                    {player.isHost && <div className="host-label">Host</div>}
-                    {gameStarted && currentPlayerIndex === index && <div className="turn-label">Current Turn</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Game Controls */}
-          <div className="game-controls">
-            {/* Host Controls */}
-            {isHost && !gameStarted && (
-              <div className="host-controls">
-                <div className="start-game-section">
-                  <button 
-                    className="start-game-btn"
-                    onClick={handleStartGame}
-                    disabled={playerCount < 2}
-                  >
-                    {playerCount < 2 ? 'Need at least 2 players' : 'Start Game'}
-                  </button>
+              <div className="gr-log tp-panel">
+                <div className="panel-head"><span className="tp-eyebrow">Order Book</span></div>
+                <div className="log-feed">
+                  {history.length === 0 && <div className="log-empty">No bids yet — the table is quiet.</div>}
+                  {[...history].reverse().map((h, i) => (
+                    <div className={`log-row ${h.type}`} key={h.ts || i}>
+                      <span className="log-type">
+                        {h.type === 'bid' ? 'OPEN' : h.type === 'raise' ? 'RAISE' : 'CALL'}
+                      </span>
+                      <span className="log-who">{h.playerName}</span>
+                      <span className="log-bid">{betLabel(h.quantity, h.digit)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )}
+            </aside>
 
-            {/* Game Play Controls */}
-            {gameStarted && !gameEnded && (
-              <div className="game-play-controls">
-                {currentBet && (
-                  <div className="current-bet">
-                    <h3>Current Bet</h3>
-                    <div className="bet-display">
-                      <span className="bet-text">{currentBet.betText}</span>
-                      <span className="bet-player">- {currentBet.playerName}</span>
-                    </div>
-                  </div>
-                )}
+            {/* --- Right: note + bid + controls --- */}
+            <main className="gr-main">
+              <DollarBill serialNumber={mySerial} label="Your Note" owner={playerName} />
 
-                {/* Initial bet for host after game starts */}
-                {canMakeInitialBet && (
-                  <div className="turn-controls">
-                    <h3>Place Initial Bet</h3>
-                    <div className="bet-controls">
-                      <div className="slider-group">
-                        <label>Quantity: {quantity}</label>
-                        <input
-                          type="range"
-                          min="1"
-                          max="10"
-                          value={quantity}
-                          onChange={(e) => setQuantity(parseInt(e.target.value))}
-                          className="slider"
-                        />
-                      </div>
-                      
-                      <div className="slider-group">
-                        <label>Digit: {digit}</label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="9"
-                          value={digit}
-                          onChange={(e) => setDigit(parseInt(e.target.value))}
-                          className="slider"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="bet-preview">
-                      <strong>Your bet:</strong> "I bet at least {quantity} {digit}{quantity === 1 ? '' : "'s"}"
-                    </div>
-                    
-                    <button 
-                      className="place-bet-btn"
-                      onClick={handlePlaceBet}
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting ? 'Placing Bet...' : 'Place Bet'}
-                    </button>
-                  </div>
-                )}
+              {currentBet && (
+                <div className="gr-bid tp-panel">
+                  <span className="tp-eyebrow">Standing Bid</span>
+                  <div className="bid-big">{currentBet.betText}</div>
+                  <div className="bid-by">by {currentBet.playerName}</div>
+                </div>
+              )}
 
-                {isMyTurn && currentBet && (
-                  <div className="turn-controls">
-                    <h3>Your Turn - Make a Move</h3>
-                    <div className="bet-controls">
-                      <div className="slider-group">
-                        <label>Quantity: {quantity}</label>
-                        <input
-                          type="range"
-                          min="1"
-                          max="10"
-                          value={quantity}
-                          onChange={(e) => setQuantity(parseInt(e.target.value))}
-                          className="slider"
-                        />
-                      </div>
-                      
-                      <div className="slider-group">
-                        <label>Digit: {digit}</label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="9"
-                          value={digit}
-                          onChange={(e) => setDigit(parseInt(e.target.value))}
-                          className="slider"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="bet-preview">
-                      <strong>Your bet:</strong> "I bet at least {quantity} {digit}{quantity === 1 ? '' : "'s"}"
-                    </div>
-                    
-                    <div className="action-buttons">
-                      <button 
-                        className="raise-btn"
-                        onClick={handleRaiseBet}
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? 'Raising...' : 'Raise Bet'}
+              {/* Waiting room (pre-game) */}
+              {!gameStarted && (
+                <div className="gr-controls tp-panel">
+                  {isHost ? (
+                    <>
+                      <p className="ctrl-note">
+                        {playerCount < 2
+                          ? 'Waiting for at least one more trader to sit down…'
+                          : 'Everyone\'s seated. Open the market when ready.'}
+                      </p>
+                      <button className="tp-btn" onClick={handleStartGame} disabled={playerCount < 2}>
+                        {playerCount < 2 ? 'Need 2+ traders' : '▸ Start Hand'}
                       </button>
-                      
-                      <button 
-                        className="challenge-btn"
-                        onClick={handleChallenge}
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? 'Challenging...' : 'Challenge'}
-                      </button>
+                      <button className="tp-btn ghost" onClick={copyLink}>🔗 Copy Invite Link</button>
+                    </>
+                  ) : (
+                    <p className="ctrl-note pulse">Waiting for the host to start the hand…</p>
+                  )}
+                </div>
+              )}
+
+              {/* My turn: initial bet OR raise/challenge */}
+              {gameStarted && (canMakeInitialBet || canMakeMove) && (
+                <div className="gr-controls tp-panel anim-pop">
+                  <div className="panel-head">
+                    <span className="tp-eyebrow">{canMakeInitialBet ? 'Open the Market' : 'Your Move'}</span>
+                  </div>
+
+                  <div className="bid-builder">
+                    <div className="slider-block">
+                      <div className="slider-top"><span>Count</span><b>{quantity}</b></div>
+                      <input className="tp-range" type="range" min="1" max={Math.max(10, playerCount * 8)}
+                        value={quantity} onChange={(e) => { setQuantity(+e.target.value); sounds.tick(); }} />
+                    </div>
+                    <div className="slider-block">
+                      <div className="slider-top"><span>Digit</span><b>{digit}</b></div>
+                      <input className="tp-range" type="range" min="0" max="9"
+                        value={digit} onChange={(e) => { setDigit(+e.target.value); sounds.tick(); }} />
                     </div>
                   </div>
-                )}
 
-                {!isMyTurn && gameStarted && (
-                  <div className="waiting-turn">
-                    <h3>Waiting for {currentPlayer?.name}'s turn...</h3>
-                    {currentBet && (
-                      <div className="current-bet">
-                        <div className="bet-display">
-                          <span className="bet-text">{currentBet.betText}</span>
-                          <span className="bet-player">- {currentBet.playerName}</span>
-                        </div>
-                      </div>
+                  <div className={`bid-preview ${!canMakeInitialBet && !isValidRaise ? 'invalid' : ''}`}>
+                    “I bid <b>{betLabel(quantity, digit)}</b>”
+                    {!canMakeInitialBet && !isValidRaise && (
+                      <span className="bid-hint">must beat {currentBet.betText}</span>
                     )}
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* Game End */}
-            {gameEnded && (
-              <div className="game-end">
-                <h2>Game Over!</h2>
-                <div className="winner-announcement">
-                  <span className="winner-icon">🏆</span>
-                  <span className="winner-name">{winner?.name} wins!</span>
-                </div>
-                {room.gameResult && (
-                  <div className="game-result">
-                    <p><strong>Claimed:</strong> {room.gameResult.claimedCount} {room.gameResult.targetDigit}'s</p>
-                    <p><strong>Actual:</strong> {room.gameResult.actualCount} {room.gameResult.targetDigit}'s</p>
-                    <div className="serial-numbers">
-                      <h4>All Serial Numbers:</h4>
-                      {room.gameResult.allSerialNumbers.map((player, index) => (
-                        <div key={index} className="serial-item">
-                          <span>{player.name}:</span> <span className="serial">{player.serial}</span>
-                        </div>
-                      ))}
+                  {canMakeInitialBet ? (
+                    <button className="tp-btn" onClick={handlePlaceBet} disabled={isSubmitting}>
+                      {isSubmitting ? 'Placing…' : '▸ Place Opening Bid'}
+                    </button>
+                  ) : (
+                    <div className="ctrl-actions">
+                      <button className="tp-btn" onClick={handleRaiseBet} disabled={isSubmitting || !isValidRaise}>
+                        {isSubmitting ? '…' : '▲ Raise'}
+                      </button>
+                      <button className="tp-btn red" onClick={handleChallenge} disabled={isSubmitting}>
+                        {isSubmitting ? '…' : '✕ Call Bluff'}
+                      </button>
                     </div>
-                  </div>
-                )}
-                {isHost && (
-                  <button 
-                    className="play-again-btn"
-                    onClick={handlePlayAgain}
-                    disabled={isSubmitting}
-                  >
-                    {isSubmitting ? 'Resetting...' : 'Play Again'}
-                  </button>
-                )}
-                <button 
-                  className="leave-room-btn"
-                  onClick={handleLeaveRoom}
-                  disabled={isLeaving}
-                >
-                  {isLeaving ? 'Leaving...' : 'Leave Room'}
-                </button>
-              </div>
-            )}
-          </div>
+                  )}
+                </div>
+              )}
 
-          {/* Game Status */}
-          {gameStarted && !gameEnded && (
-            <div className="game-status">
-              <div className="status-badge playing">Game in Progress</div>
-              <p>Current turn: {currentPlayer?.name}</p>
-            </div>
-          )}
-        </div>
+              {/* Not my turn */}
+              {gameStarted && !canMakeInitialBet && !canMakeMove && (
+                <div className="gr-controls tp-panel">
+                  <p className="ctrl-note pulse">
+                    {currentBet
+                      ? `Waiting on ${currentPlayer?.name} to act…`
+                      : `Waiting for ${currentPlayer?.name} to open the market…`}
+                  </p>
+                </div>
+              )}
+            </main>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-export default GameRoom; 
+export default GameRoom;

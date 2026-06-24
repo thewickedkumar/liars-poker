@@ -1,148 +1,78 @@
-.home-screen {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+.home-inner {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 20px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.home-container {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 20px;
-  padding: 40px;
   text-align: center;
-  max-width: 500px;
-  width: 100%;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  gap: 22px;
 }
 
-.game-title {
-  font-size: 3rem;
-  font-weight: bold;
-  margin-bottom: 20px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+.home-eyebrow { margin-bottom: 2px; }
+
+.home-title {
+  font-size: clamp(64px, 14vw, 150px);
+  letter-spacing: 0.02em;
+  color: var(--text);
+  text-shadow: 0 0 40px rgba(0,0,0,0.6);
+}
+.home-title .accent {
+  color: var(--green);
+  text-shadow: 0 0 50px rgba(46,230,160,0.4);
 }
 
-.game-description {
-  font-size: 1.1rem;
-  color: #666;
-  line-height: 1.6;
-  margin-bottom: 30px;
-  max-width: 400px;
-  margin-left: auto;
-  margin-right: auto;
+.home-tag {
+  max-width: 580px;
+  font-size: clamp(14px, 2.4vw, 16px);
+  line-height: 1.7;
+  color: var(--text-dim);
+  letter-spacing: 0.01em;
 }
 
-.game-features {
+.home-cta {
   display: flex;
-  flex-direction: column;
-  gap: 15px;
-  margin-bottom: 40px;
-}
-
-.feature {
-  display: flex;
-  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
-  font-size: 1rem;
-  color: #555;
-  padding: 10px;
-  border-radius: 10px;
-  background: rgba(102, 126, 234, 0.1);
-  transition: all 0.3s ease;
+  margin-top: 6px;
 }
+.home-cta .tp-btn { padding: 16px 30px; font-size: 15px; }
 
-.feature:hover {
-  background: rgba(102, 126, 234, 0.2);
-  transform: translateY(-2px);
+.home-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  width: 100%;
+  margin-top: 26px;
 }
-
-.feature-icon {
-  font-size: 1.5rem;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
-}
-
-.action-buttons {
+.home-step {
+  text-align: left;
+  padding: 22px 20px;
   display: flex;
   flex-direction: column;
-  gap: 15px;
-  align-items: center;
+  gap: 8px;
+  transition: transform .2s ease, border-color .2s ease;
+}
+.home-step:hover { transform: translateY(-4px); border-color: var(--line-hard); }
+.home-step-n {
+  font-size: 34px;
+  color: var(--green-deep);
+  line-height: 1;
+}
+.home-step-t {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+.home-step-d {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
 }
 
-.create-room-btn {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: white;
-  border: none;
-  padding: 15px 30px;
-  font-size: 1.2rem;
-  font-weight: 600;
-  border-radius: 50px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
-  min-width: 200px;
-}
+.home-foot { margin-top: 16px; }
+.home-foot em { color: var(--green-dim); font-style: italic; }
 
-.create-room-btn:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 25px rgba(102, 126, 234, 0.4);
+@media (max-width: 720px) {
+  .home-steps { grid-template-columns: 1fr; }
 }
-
-.create-room-btn:active {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 15px rgba(102, 126, 234, 0.3);
-}
-
-.join-room-btn {
-  background: linear-gradient(135deg, #f093fb, #f5576c);
-  color: white;
-  border: none;
-  padding: 15px 30px;
-  font-size: 1.2rem;
-  font-weight: 600;
-  border-radius: 50px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 8px 20px rgba(245, 87, 108, 0.3);
-  min-width: 200px;
-}
-
-.join-room-btn:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 25px rgba(245, 87, 108, 0.4);
-}
-
-.join-room-btn:active {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 15px rgba(245, 87, 108, 0.3);
-}
-
-/* Responsive design */
-@media (max-width: 600px) {
-  .home-container {
-    padding: 30px 20px;
-  }
-  
-  .game-title {
-    font-size: 2.5rem;
-  }
-  
-  .game-description {
-    font-size: 1rem;
-  }
-  
-  .create-room-btn,
-  .join-room-btn {
-    padding: 12px 25px;
-    font-size: 1.1rem;
-  }
-} 

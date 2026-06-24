@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('renders the Liar\'s Poker lobby', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  // Brand bar + home hero both surface the title
+  expect(screen.getAllByText(/liar's/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/open a table/i)).toBeInTheDocument();
 });

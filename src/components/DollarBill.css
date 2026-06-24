@@ -1,0 +1,205 @@
+/* ============================================================
+   Federal Reserve Note — terminal banknote
+   ============================================================ */
+.note {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 18px 20px;
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(46,230,160,0.06), transparent 55%),
+    radial-gradient(120% 120% at 0% 0%, rgba(255,176,0,0.05), transparent 50%),
+    #08100d;
+  border: 1px solid var(--green-deep);
+  box-shadow:
+    inset 0 0 0 1px rgba(46,230,160,0.18),
+    inset 0 0 30px rgba(46,230,160,0.05),
+    var(--shadow);
+  overflow: hidden;
+  color: var(--green);
+}
+
+/* guilloché engraving texture */
+.note-guilloche {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    repeating-radial-gradient(circle at 18% 120%, transparent 0 9px, rgba(46,230,160,0.05) 9px 10px),
+    repeating-radial-gradient(circle at 86% -20%, transparent 0 7px, rgba(46,230,160,0.04) 7px 8px),
+    repeating-linear-gradient(60deg, transparent 0 6px, rgba(46,230,160,0.025) 6px 7px);
+}
+
+.note-corner {
+  position: absolute;
+  width: 22px; height: 22px;
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-size: 12px;
+  color: var(--green-dim);
+  border: 1px solid var(--green-deep);
+  border-radius: 5px;
+  background: rgba(0,0,0,0.35);
+}
+.note-corner.tl { top: 10px; left: 10px; }
+.note-corner.tr { top: 10px; right: 10px; }
+.note-corner.bl { bottom: 10px; left: 10px; }
+.note-corner.br { bottom: 10px; right: 10px; }
+
+.note-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 30px 12px;
+  border-bottom: 1px dashed var(--green-deep);
+  margin-bottom: 14px;
+}
+.note-reserve {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 13px;
+  color: var(--amber);
+  text-shadow: var(--glow-amber);
+}
+.note-series {
+  position: absolute;
+  right: 30px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.note-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 18px;
+  align-items: center;
+}
+
+.note-left { display: flex; flex-direction: column; gap: 12px; }
+.note-portrait {
+  position: relative;
+  width: 62px; height: 62px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(46,230,160,0.16), transparent 70%);
+  border: 1px solid var(--green-deep);
+}
+.note-portrait-glyph {
+  font-family: var(--display);
+  font-size: 30px;
+  color: var(--green);
+  text-shadow: var(--glow-green);
+}
+.note-portrait-ring {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 1px dashed rgba(46,230,160,0.35);
+}
+.note-copy { display: flex; flex-direction: column; gap: 4px; }
+.note-denom {
+  font-family: var(--display);
+  text-transform: uppercase;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+.note-country {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--green-dim);
+}
+.note-tender {
+  font-size: 8px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.note-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  gap: 8px;
+}
+.note-seal {
+  font-size: 22px;
+  color: var(--amber);
+  opacity: 0.7;
+  line-height: 1;
+}
+.note-serial-label {
+  font-size: 9px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.note-serial {
+  display: flex;
+  gap: 1px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+.note-char {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1;
+  padding: 4px 2px;
+  border-radius: 4px;
+  color: var(--green-bright);
+  text-shadow: 0 0 10px rgba(46,230,160,0.35);
+  transition: background .3s ease, color .3s ease, transform .3s ease;
+}
+.note-char.alpha { color: var(--amber); text-shadow: 0 0 8px rgba(255,176,0,0.3); }
+.note-char.hot {
+  background: var(--green);
+  color: #04140d;
+  text-shadow: none;
+  box-shadow: var(--glow-green);
+  transform: translateY(-2px);
+}
+.note-owner {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.note-actions {
+  position: relative;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--green-deep);
+  display: flex;
+  justify-content: center;
+}
+
+/* ---- compact variant (lists) ---- */
+.note-compact { padding: 12px 14px; max-width: none; }
+.note-compact .note-char { font-size: 16px; padding: 2px; }
+.note-compact .note-portrait { width: 46px; height: 46px; }
+.note-compact .note-portrait-glyph { font-size: 22px; }
+.note-compact .note-tender { display: none; }
+
+@media (max-width: 480px) {
+  .note-body { grid-template-columns: 1fr; }
+  .note-right { align-items: flex-start; text-align: left; }
+  .note-serial { justify-content: flex-start; }
+  .note-char { font-size: 19px; }
+}

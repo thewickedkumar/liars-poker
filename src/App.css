@@ -1,0 +1,166 @@
+/* ============================================================
+   App shell — trading floor background + brand bar + ticker
+   ============================================================ */
+
+.App {
+  position: relative;
+  min-height: 100%;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+/* Layered trading-floor backdrop */
+.floor-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(1200px 700px at 50% -10%, rgba(46, 230, 160, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 90% 110%, rgba(255, 176, 0, 0.06), transparent 55%),
+    var(--bg);
+}
+.floor-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 30%, transparent 85%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 30%, transparent 85%);
+  pointer-events: none;
+}
+/* subtle scanline texture */
+.floor-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent 0 3px, rgba(0,0,0,0.14) 3px 4px
+  );
+  opacity: 0.35;
+}
+
+/* ---- Brand bar ---- */
+.brand-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px clamp(14px, 4vw, 34px);
+  background: linear-gradient(180deg, rgba(6,9,10,0.96), rgba(6,9,10,0.78));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.brand-mark {
+  width: 34px; height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--green);
+  color: var(--bg);
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 700;
+  box-shadow: var(--glow-green);
+}
+.brand-name {
+  font-family: var(--display);
+  font-size: 19px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  line-height: 1;
+}
+.brand-name b { color: var(--green); font-weight: 700; }
+.brand-sub {
+  font-size: 9.5px;
+  letter-spacing: 0.34em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.brand-actions { display: flex; align-items: center; gap: 10px; }
+
+.icon-btn {
+  width: 38px; height: 38px;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 16px;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.icon-btn:hover { color: var(--green); border-color: var(--line-hard); background: var(--panel-2); }
+
+/* ---- Ticker tape ---- */
+.ticker {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: rgba(0,0,0,0.45);
+  z-index: 30;
+}
+.ticker-track {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+  animation: tickerScroll 38s linear infinite;
+}
+.ticker:hover .ticker-track { animation-play-state: paused; }
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 22px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  border-right: 1px solid var(--line-soft);
+}
+.ticker-item b { color: var(--text); font-weight: 700; }
+.ticker-item .up   { color: var(--green); }
+.ticker-item .down { color: var(--red); }
+
+/* ---- Screen container ---- */
+.screen-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* page enter transition keyed by screen */
+.page-enter { animation: fadeUp .42s cubic-bezier(.2,.7,.3,1) both; }
+
+/* generic centered column used by simple screens */
+.center-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 5vw, 56px) clamp(16px, 4vw, 32px);
+  width: 100%;
+}
+.shell-max { width: 100%; max-width: var(--maxw); margin: 0 auto; }
+
+@media (max-width: 560px) {
+  .brand-sub { display: none; }
+}
